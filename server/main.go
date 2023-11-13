@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"fmt"
 	"github.com/gorilla/websocket"
 	"log"
 	"net/http"
@@ -33,14 +34,17 @@ func (s *Server) handleConnections(w http.ResponseWriter, r *http.Request) {
 		log.Fatal(err)
 		return
 	}
-	defer conn.Close()
+	defer func() {
+		delete(s.clients, conn)
+		conn.Close()
+	}()
 
 	s.clients[conn] = struct{}{}
 
 	for {
 		_, p, err := conn.ReadMessage()
 		if err != nil {
-			log.Println(err)
+			fmt.Println(err)
 			return
 		}
 
@@ -49,23 +53,26 @@ func (s *Server) handleConnections(w http.ResponseWriter, r *http.Request) {
 		err = json.Unmarshal(p, &mes)
 
 		if err != nil {
-			log.Println(err)
+			fmt.Println(err)
 		}
 
 		for client := range s.clients {
-			err = client.WriteJSON(mes)
-			if err != nil {
-				log.Println(err)
-				return
-			}
+			go sendMessage(client, mes)
 		}
+	}
+}
+
+func sendMessage(client *websocket.Conn, mes Message) {
+	err := client.WriteJSON(mes)
+	if err != nil {
+		fmt.Println(err)
 	}
 }
 
 func main() {
 	server := NewServer()
 
-	http.HandleFunc("/ws", server.handleConnections)
+	http.HandleFunc("/", server.handleConnections)
 
 	err := http.ListenAndServe(":8000", nil)
 	if err != nil {
